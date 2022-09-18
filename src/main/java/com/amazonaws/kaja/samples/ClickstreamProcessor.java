@@ -22,6 +22,9 @@ import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
 import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaPartitioner;
+import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.config.SaslConfigs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import samples.clickstream.avro.ClickEvent;
@@ -34,7 +37,7 @@ public class ClickstreamProcessor {
     private static final Logger LOG = LoggerFactory.getLogger(ClickstreamProcessor.class);
     private static final List<String> MANDATORY_PARAMETERS = Arrays.asList("BootstrapServers");
     private static transient Gson gson = new GsonBuilder().setDateFormat("yyyy-MM-dd HH:mm:ss.SSS").create();
-    private static Map<String, Object> configs = new HashMap<>();
+    private static Map<String, Object> schemaRegistryConfigs = new HashMap<>();
 
     public static <T> String toJson(T objToConvert){
 
@@ -100,26 +103,23 @@ public class ClickstreamProcessor {
 
         //Setting properties for Apache kafka (MSK)
         Properties kafkaConfig = new Properties();
-        kafkaConfig.setProperty("bootstrap.servers", flinkProperties.getProperty("BootstrapServers"));
-        kafkaConfig.setProperty("group.id", flinkProperties.getProperty("GroupId", "flink-clickstream-processor"));
-        kafkaConfig.setProperty("security.protocol", "SASL_SSL");
-        kafkaConfig.setProperty("sasl.mechanism", "AWS_MSK_IAM");
-        kafkaConfig.setProperty("sasl.jaas.config", "software.amazon.msk.auth.iam.IAMLoginModule required;");
-        kafkaConfig.setProperty("sasl.client.callback.handler.class", "software.amazon.msk.auth.iam.IAMClientCallbackHandler");
-
+        kafkaConfig.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, flinkProperties.getProperty("BootstrapServers"));
+        kafkaConfig.setProperty(ConsumerConfig.GROUP_ID_CONFIG,flinkProperties.getProperty("GroupId", "flink-clickstream-processor"));
+        kafkaConfig.setProperty(ConsumerConfig.CLIENT_ID_CONFIG,"consumer.properties");
+        kafkaConfig.setProperty(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
+        kafkaConfig.setProperty(SaslConfigs.SASL_MECHANISM, "AWS_MSK_IAM");
+        kafkaConfig.setProperty(SaslConfigs.SASL_JAAS_CONFIG, "software.amazon.msk.auth.iam.IAMLoginModule required;");
+        kafkaConfig.setProperty(SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS, "software.amazon.msk.auth.iam.IAMClientCallbackHandler");
 
         WatermarkStrategy watermarkStrategy = WatermarkStrategy
                 .forBoundedOutOfOrderness(Duration.ofSeconds(20)).withIdleness(Duration.ofMinutes(1));
 
-        configs.put(AWSSchemaRegistryConstants.AWS_REGION, flinkProperties.getProperty("Region"));
-//        configs.put(AWSSchemaRegistryConstants.SCHEMA_AUTO_REGISTRATION_SETTING, true);
-//        configs.put(AWSSchemaRegistryConstants.SCHEMA_NAME, flinkProperties.getProperty("SchemaName"));
-//        configs.put(AWSSchemaRegistryConstants.REGISTRY_NAME, flinkProperties.getProperty("RegistryName"));
-        configs.put(AWSSchemaRegistryConstants.AVRO_RECORD_TYPE, AvroRecordType.SPECIFIC_RECORD.getName());
+        schemaRegistryConfigs.put(AWSSchemaRegistryConstants.AWS_REGION, flinkProperties.getProperty("Region"));
+        schemaRegistryConfigs.put(AWSSchemaRegistryConstants.AVRO_RECORD_TYPE, AvroRecordType.SPECIFIC_RECORD.getName());
 
         FlinkKafkaConsumer<ClickEvent> consumer = new FlinkKafkaConsumer<>(
                 flinkProperties.getProperty("Topic", "ExampleTopic"),
-                GlueSchemaRegistryAvroDeserializationSchema.forSpecific(ClickEvent.class, configs),
+                GlueSchemaRegistryAvroDeserializationSchema.forSpecific(ClickEvent.class, schemaRegistryConfigs),
                 kafkaConfig);
         //Setting the source for Apache kafka (MSK) and assigning Timestamps and watermarks for Event Time
         DataStream<ClickEvent> clickEvents = env.addSource(consumer
@@ -138,20 +138,20 @@ public class ClickstreamProcessor {
                 .window(EventTimeSessionWindows.withGap(Time.seconds(1)))
                 .aggregate(new UserAggregate(), new UserAggWindowFunction());
 
-
+        userSessionsAggregates.print();
         //Filtering out the sessions without a buy, so we only have the sessions with a buy
-        DataStream<UserIdSessionEvent> userSessionsAggregatesWithOrderCheckout = userSessionsAggregates
-                .filter((FilterFunction<UserIdSessionEvent>) userIdSessionEvent -> userIdSessionEvent.getOrderCheckoutEventCount() != 0);
-        userSessionsAggregatesWithOrderCheckout.print();
+//        DataStream<UserIdSessionEvent> userSessionsAggregatesWithOrderCheckout = userSessionsAggregates
+//                .filter((FilterFunction<UserIdSessionEvent>) userIdSessionEvent -> userIdSessionEvent.getOrderCheckoutEventCount() != 0);
+//        userSessionsAggregatesWithOrderCheckout.print();
 
         //Calculating overall number of user sessions in the last 10 seconds (tumbling window), sessions with a buy and
         //percent of sessions with a buy
         //using a processwindowfunction in addition to aggregate to optimize the aggregation
         // and include window metadata like window start and end times
-        DataStream<UserIdAggEvent> clickEventsUserIdAggResult =  userSessionsAggregates
-                .keyBy(event -> event.getEventKey())
-                .window(TumblingEventTimeWindows.of(Time.seconds(10)))
-                .aggregate(new UserSessionAggregates(), new UserSessionWindowFunction());
+//        DataStream<UserIdAggEvent> clickEventsUserIdAggResult =  userSessionsAggregates
+//                .keyBy(event -> event.getEventKey())
+//                .window(TumblingEventTimeWindows.of(Time.seconds(10)))
+//                .aggregate(new UserSessionAggregates(), new UserSessionWindowFunction());
 
         //Calculating unique departments visited and number of user sessions visiting the department
         // in the last 10 seconds (tumbling window)
@@ -163,7 +163,7 @@ public class ClickstreamProcessor {
                 .reduce(new DepartmentsAggReduceFunction(), new DepartmentsAggWindowFunction())
                 ;
 
-
+        departmentsAgg.print();
         //clickEventsUserIdAggResult.addSink(sinkclickEventsUserIdAggResult);
         //Keyed serialization schema to provide a key which with null partitioner will allow Kafka to use the key to
         //hash partition messages across the topic partitions
@@ -175,35 +175,35 @@ public class ClickstreamProcessor {
 
         //Non keyed serialization schema which with null partitioner will allow Kafka to
         //round robin messages across the topic partitions
-        FlinkKafkaProducer<UserIdAggEvent> kafkaUserIdAggEvents = new FlinkKafkaProducer<>(flinkProperties.getProperty("clickEventsUserIdAggResult_Topic", "ClickEvents_UserId_Agg_Result"),
-                (SerializationSchema<UserIdAggEvent>) element -> toJson(element).getBytes(), kafkaConfig, Optional.ofNullable((FlinkKafkaPartitioner<UserIdAggEvent>) null));
-
-        kafkaUserIdAggEvents.setWriteTimestampToKafka(true);
-        clickEventsUserIdAggResult.addSink(kafkaUserIdAggEvents);
+//        FlinkKafkaProducer<UserIdAggEvent> kafkaUserIdAggEvents = new FlinkKafkaProducer<>(flinkProperties.getProperty("clickEventsUserIdAggResult_Topic", "ClickEvents_UserId_Agg_Result"),
+//                (SerializationSchema<UserIdAggEvent>) element -> toJson(element).getBytes(), kafkaConfig, Optional.ofNullable((FlinkKafkaPartitioner<UserIdAggEvent>) null));
+//
+//        kafkaUserIdAggEvents.setWriteTimestampToKafka(true);
+//        clickEventsUserIdAggResult.addSink(kafkaUserIdAggEvents);
 
         //Non keyed serialization schema which with null partitioner will allow Kafka to
         //round robin messages across the topic partitions
-        FlinkKafkaProducer<UserIdSessionEvent> kafkaUserIdSessionEvent = new FlinkKafkaProducer<>(flinkProperties.getProperty("userSessionsAggregatesWithOrderCheckout_Topic", "User_Sessions_Aggregates_With_Order_Checkout"),
-                (SerializationSchema<UserIdSessionEvent>) element -> toJson(element).getBytes(), kafkaConfig, Optional.ofNullable((FlinkKafkaPartitioner<UserIdSessionEvent>) null));
-        kafkaUserIdSessionEvent.setWriteTimestampToKafka(true);
-        userSessionsAggregatesWithOrderCheckout.addSink(kafkaUserIdSessionEvent);
+//        FlinkKafkaProducer<UserIdSessionEvent> kafkaUserIdSessionEvent = new FlinkKafkaProducer<>(flinkProperties.getProperty("userSessionsAggregatesWithOrderCheckout_Topic", "User_Sessions_Aggregates_With_Order_Checkout"),
+//                (SerializationSchema<UserIdSessionEvent>) element -> toJson(element).getBytes(), kafkaConfig, Optional.ofNullable((FlinkKafkaPartitioner<UserIdSessionEvent>) null));
+//        kafkaUserIdSessionEvent.setWriteTimestampToKafka(true);
+//        userSessionsAggregatesWithOrderCheckout.addSink(kafkaUserIdSessionEvent);
 
 
         //Creating Amazon Elasticsearch sinks and sinking the streams to it
-        if (flinkProperties.containsKey("ElasticsearchEndpoint")) {
-            String region;
-            final String elasticsearchEndpoint = flinkProperties.getProperty("ElasticsearchEndpoint");
-
-            if (env instanceof LocalStreamEnvironment) {
-                region = flinkProperties.getProperty("Region");
-            } else {
-                region = flinkProperties.getProperty("Region", Regions.getCurrentRegion().getName());
-            }
-
-            departmentsAgg.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "departments_count", "departments_count"));
-            clickEventsUserIdAggResult.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_counts", "user_session_counts"));
-            userSessionsAggregatesWithOrderCheckout.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_details", "user_session_details"));
-        }
+//        if (flinkProperties.containsKey("ElasticsearchEndpoint")) {
+//            String region;
+//            final String elasticsearchEndpoint = flinkProperties.getProperty("ElasticsearchEndpoint");
+//
+//            if (env instanceof LocalStreamEnvironment) {
+//                region = flinkProperties.getProperty("Region");
+//            } else {
+//                region = flinkProperties.getProperty("Region", Regions.getCurrentRegion().getName());
+//            }
+//
+//            departmentsAgg.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "departments_count", "departments_count"));
+//            clickEventsUserIdAggResult.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_counts", "user_session_counts"));
+//            userSessionsAggregatesWithOrderCheckout.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_details", "user_session_details"));
+//        }
         LOG.info("Starting execution..");
         env.execute();
 
