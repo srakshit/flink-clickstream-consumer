@@ -1,8 +1,6 @@
 package com.amazonaws.kaja.samples;
 
 import com.amazonaws.kaja.samples.utils.AmazonElasticsearchSink;
-import software.amazon.awssdk.regions.Region;
-import com.amazonaws.regions.Regions;
 import com.amazonaws.services.kinesisanalytics.runtime.KinesisAnalyticsRuntime;
 import com.amazonaws.services.schemaregistry.flink.avro.GlueSchemaRegistryAvroDeserializationSchema;
 import com.amazonaws.services.schemaregistry.utils.AWSSchemaRegistryConstants;
@@ -29,11 +27,6 @@ import org.apache.kafka.common.config.SaslConfigs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import samples.clickstream.avro.ClickEvent;
-import software.amazon.awssdk.services.sts.StsClient;
-import software.amazon.awssdk.services.sts.model.AssumeRoleRequest;
-import software.amazon.awssdk.services.sts.model.AssumeRoleResponse;
-import software.amazon.awssdk.services.sts.model.Credentials;
-import software.amazon.awssdk.services.sts.model.StsException;
 
 import java.time.Duration;
 import java.util.*;
@@ -62,28 +55,6 @@ public class ClickstreamProcessor {
         return null;
     }
 
-    public static void assumeGlueSchemaRegistryRole() {
-        try {
-            Region region = Region.of("us-east-1");
-            if(!Region.regions().contains(region))
-                throw new RuntimeException("Region : " + "us-east-1" + " is invalid.");
-            StsClient stsClient = StsClient.builder().region(region).build();
-            AssumeRoleRequest roleRequest = AssumeRoleRequest.builder()
-                    .roleArn("arn:aws:iam::940270119111:role/msksls-clickstream-EC2Role-11M4I4VE59TGV")
-                    .roleSessionName("flink-clickstream-consumer")
-                    .build();
-            AssumeRoleResponse roleResponse = stsClient.assumeRole(roleRequest);
-            Credentials myCreds = roleResponse.credentials();
-            System.setProperty("aws.accessKeyId", myCreds.accessKeyId());
-            System.setProperty("aws.secretAccessKey", myCreds.secretAccessKey());
-            System.setProperty("aws.sessionToken", myCreds.sessionToken());
-            stsClient.close();
-        } catch (StsException e) {
-            LOG.error(e.getMessage());
-            System.exit(1);
-        }
-    }
-
     public static void main(String[] args) throws Exception {
 
         //Setting up the ExecutionEnvironment
@@ -94,7 +65,6 @@ public class ClickstreamProcessor {
         Map<String, Properties> applicationProperties;
 
         if (env instanceof LocalStreamEnvironment) {
-                System.out.println(Objects.requireNonNull(ClickstreamProcessor.class.getClassLoader().getResource("KDAApplicationProperties.json")).getPath());
 //            applicationProperties  = KinesisAnalyticsRuntime.getApplicationProperties(Objects.requireNonNull(ClickstreamProcessor.class.getClassLoader().getResource("KDAApplicationProperties.json")).getPath());
             applicationProperties  = KinesisAnalyticsRuntime.getApplicationProperties("/home/ec2-user/flink-clickstream-consumer/src/main/resources/KDAApplicationProperties.json");
             //Setting parallelism in code. When running on my laptop I was getting out of file handles error, so reduced parallelism, but increase it on KDA
@@ -136,7 +106,7 @@ public class ClickstreamProcessor {
         kafkaConfig.setProperty(ConsumerConfig.CLIENT_ID_CONFIG,"flink.consumer.properties");
         kafkaConfig.setProperty(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
         kafkaConfig.setProperty(SaslConfigs.SASL_MECHANISM, "AWS_MSK_IAM");
-        kafkaConfig.setProperty(SaslConfigs.SASL_JAAS_CONFIG, "software.amazon.msk.auth.iam.IAMLoginModule required awsRoleArn=\"arn:aws:iam::940270119111:role/msksls-clickstream-EC2Role-11M4I4VE59TGV\" awsRoleSessionName=\"producer\"  awsStsRegion=\"us-east-1\";");
+        kafkaConfig.setProperty(SaslConfigs.SASL_JAAS_CONFIG, "software.amazon.msk.auth.iam.IAMLoginModule required;");
         kafkaConfig.setProperty(SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS, "software.amazon.msk.auth.iam.IAMClientCallbackHandler");
 
         WatermarkStrategy watermarkStrategy = WatermarkStrategy
@@ -218,20 +188,20 @@ public class ClickstreamProcessor {
 
 
         //Creating Amazon Elasticsearch sinks and sinking the streams to it
-        if (flinkProperties.containsKey("ElasticsearchEndpoint")) {
-            String region;
-            final String elasticsearchEndpoint = flinkProperties.getProperty("ElasticsearchEndpoint");
-
-            if (env instanceof LocalStreamEnvironment) {
-                region = flinkProperties.getProperty("Region");
-            } else {
-                region = flinkProperties.getProperty("Region", Regions.getCurrentRegion().getName());
-            }
-
-            departmentsAgg.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "departments_count", "departments_count"));
-            clickEventsUserIdAggResult.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_counts", "user_session_counts"));
-            userSessionsAggregatesWithOrderCheckout.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_details", "user_session_details"));
-        }
+//        if (flinkProperties.containsKey("ElasticsearchEndpoint")) {
+//            String region;
+//            final String elasticsearchEndpoint = flinkProperties.getProperty("ElasticsearchEndpoint");
+//
+//            if (env instanceof LocalStreamEnvironment) {
+//                region = flinkProperties.getProperty("Region");
+//            } else {
+//                region = flinkProperties.getProperty("Region", Regions.getCurrentRegion().getName());
+//            }
+//
+//            departmentsAgg.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "departments_count", "departments_count"));
+//            clickEventsUserIdAggResult.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_counts", "user_session_counts"));
+//            userSessionsAggregatesWithOrderCheckout.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_details", "user_session_details"));
+//        }
         LOG.info("Starting execution..");
         env.execute();
 
