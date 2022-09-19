@@ -1,6 +1,6 @@
 package com.amazonaws.kaja.samples;
 
-import com.amazonaws.kaja.samples.utils.AmazonElasticsearchSink;
+import com.amazonaws.kaja.samples.utils.AmazonOpenSearchSink;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.kinesisanalytics.runtime.KinesisAnalyticsRuntime;
 import com.amazonaws.services.schemaregistry.flink.avro.GlueSchemaRegistryAvroDeserializationSchema;
@@ -187,9 +187,9 @@ public class ClickstreamProcessor {
         DataStream<Object> userSessionsAggregatesWithOrderCheckoutJson = userSessionsAggregatesWithOrderCheckout.map(x -> toJson(x));
 
         //Creating Amazon Elasticsearch sinks and sinking the streams to it
-        if (flinkProperties.containsKey("ElasticsearchEndpoint")) {
+        if (flinkProperties.containsKey("OpenSearchEndpoint")) {
             String region;
-            final String elasticsearchEndpoint = flinkProperties.getProperty("ElasticsearchEndpoint");
+            final String elasticsearchEndpoint = flinkProperties.getProperty("OpenSearchEndpoint");
 
             if (env instanceof LocalStreamEnvironment) {
                 region = flinkProperties.getProperty("Region");
@@ -197,9 +197,9 @@ public class ClickstreamProcessor {
                 region = flinkProperties.getProperty("Region", Regions.getCurrentRegion().getName());
             }
 
-            departmentsAggJson.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "departments_count"));
-            clickEventsUserIdAggResultJson.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_counts"));
-            userSessionsAggregatesWithOrderCheckoutJson.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_details"));
+            departmentsAggJson.addSink(AmazonOpenSearchSink.buildOpenSearchSink(elasticsearchEndpoint, region, "departments_count"));
+            clickEventsUserIdAggResultJson.addSink(AmazonOpenSearchSink.buildOpenSearchSink(elasticsearchEndpoint, region, "user_session_counts"));
+            userSessionsAggregatesWithOrderCheckoutJson.addSink(AmazonOpenSearchSink.buildOpenSearchSink(elasticsearchEndpoint, region, "user_session_details"));
         }
         LOG.info("Starting execution..");
         env.execute();

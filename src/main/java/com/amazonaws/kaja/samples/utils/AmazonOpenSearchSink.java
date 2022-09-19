@@ -27,16 +27,16 @@ import org.slf4j.LoggerFactory;
 import vc.inreach.aws.request.AWSSigner;
 import vc.inreach.aws.request.AWSSigningRequestInterceptor;
 
-public class AmazonElasticsearchSink {
+public class AmazonOpenSearchSink {
     private static final String ES_SERVICE_NAME = "es";
 
     private static final int FLUSH_MAX_ACTIONS = 10_000;
     private static final long FLUSH_INTERVAL_MILLIS = 1_000;
     private static final int FLUSH_MAX_SIZE_MB = 1;
 
-    private static final Logger LOG = LoggerFactory.getLogger(AmazonElasticsearchSink.class);
+    private static final Logger LOG = LoggerFactory.getLogger(AmazonOpenSearchSink.class);
 
-    public static <T> ElasticsearchSink<T> buildElasticsearchSink(String elasticsearchEndpoint, String region, String indexName) {
+    public static <T> ElasticsearchSink<T> buildOpenSearchSink(String elasticsearchEndpoint, String region, String indexName) {
         final List<HttpHost> httpHosts = Arrays.asList(HttpHost.create(elasticsearchEndpoint));
         final SerializableAWSSigningRequestInterceptor requestInterceptor = new SerializableAWSSigningRequestInterceptor(region);
 
