@@ -1,6 +1,7 @@
 package com.amazonaws.kaja.samples;
 
 import com.amazonaws.kaja.samples.utils.AmazonElasticsearchSink;
+import com.amazonaws.regions.Regions;
 import com.amazonaws.services.kinesisanalytics.runtime.KinesisAnalyticsRuntime;
 import com.amazonaws.services.schemaregistry.flink.avro.GlueSchemaRegistryAvroDeserializationSchema;
 import com.amazonaws.services.schemaregistry.utils.AWSSchemaRegistryConstants;
@@ -103,7 +104,7 @@ public class ClickstreamProcessor {
         Properties kafkaConfig = new Properties();
         kafkaConfig.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, flinkProperties.getProperty("BootstrapServers"));
         kafkaConfig.setProperty(ConsumerConfig.GROUP_ID_CONFIG,flinkProperties.getProperty("GroupId", "flink-clickstream-processor"));
-        kafkaConfig.setProperty(ConsumerConfig.CLIENT_ID_CONFIG,"flink.consumer.properties");
+//        kafkaConfig.setProperty(ConsumerConfig.CLIENT_ID_CONFIG,"flink.consumer.properties");
         kafkaConfig.setProperty(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
         kafkaConfig.setProperty(SaslConfigs.SASL_MECHANISM, "AWS_MSK_IAM");
         kafkaConfig.setProperty(SaslConfigs.SASL_JAAS_CONFIG, "software.amazon.msk.auth.iam.IAMLoginModule required;");
@@ -123,7 +124,6 @@ public class ClickstreamProcessor {
         DataStream<ClickEvent> clickEvents = env.addSource(consumer
                                 .setStartFromEarliest()
                                 .assignTimestampsAndWatermarks(watermarkStrategy));
-        //.setStartFromEarliest().assignTimestampsAndWatermarks(new ClickEventTimestampWatermarkGenerator()));
 
 
 
@@ -136,11 +136,9 @@ public class ClickstreamProcessor {
                 .window(EventTimeSessionWindows.withGap(Time.seconds(1)))
                 .aggregate(new UserAggregate(), new UserAggWindowFunction());
 
-        userSessionsAggregates.print();
         //Filtering out the sessions without a buy, so we only have the sessions with a buy
         DataStream<UserIdSessionEvent> userSessionsAggregatesWithOrderCheckout = userSessionsAggregates
                 .filter((FilterFunction<UserIdSessionEvent>) userIdSessionEvent -> userIdSessionEvent.getOrderCheckoutEventCount() != 0);
-        userSessionsAggregatesWithOrderCheckout.print();
 
         //Calculating overall number of user sessions in the last 10 seconds (tumbling window), sessions with a buy and
         //percent of sessions with a buy
@@ -158,10 +156,8 @@ public class ClickstreamProcessor {
                 .flatMap(new DepartmentsFlatMap())
                 .keyBy(event -> event.f0)
                 .window(TumblingEventTimeWindows.of(Time.seconds(10)))
-                .reduce(new DepartmentsAggReduceFunction(), new DepartmentsAggWindowFunction())
-                ;
+                .reduce(new DepartmentsAggReduceFunction(), new DepartmentsAggWindowFunction());
 
-        departmentsAgg.print();
         //clickEventsUserIdAggResult.addSink(sinkclickEventsUserIdAggResult);
         //Keyed serialization schema to provide a key which with null partitioner will allow Kafka to use the key to
         //hash partition messages across the topic partitions
@@ -186,22 +182,25 @@ public class ClickstreamProcessor {
         kafkaUserIdSessionEvent.setWriteTimestampToKafka(true);
         userSessionsAggregatesWithOrderCheckout.addSink(kafkaUserIdSessionEvent);
 
+        DataStream<Object> departmentsAggJson = departmentsAgg.map(x -> toJson(x));
+        DataStream<Object> clickEventsUserIdAggResultJson = clickEventsUserIdAggResult.map(x -> toJson(x));
+        DataStream<Object> userSessionsAggregatesWithOrderCheckoutJson = userSessionsAggregatesWithOrderCheckout.map(x -> toJson(x));
 
         //Creating Amazon Elasticsearch sinks and sinking the streams to it
-//        if (flinkProperties.containsKey("ElasticsearchEndpoint")) {
-//            String region;
-//            final String elasticsearchEndpoint = flinkProperties.getProperty("ElasticsearchEndpoint");
-//
-//            if (env instanceof LocalStreamEnvironment) {
-//                region = flinkProperties.getProperty("Region");
-//            } else {
-//                region = flinkProperties.getProperty("Region", Regions.getCurrentRegion().getName());
-//            }
-//
-//            departmentsAgg.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "departments_count", "departments_count"));
-//            clickEventsUserIdAggResult.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_counts", "user_session_counts"));
-//            userSessionsAggregatesWithOrderCheckout.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_details", "user_session_details"));
-//        }
+        if (flinkProperties.containsKey("ElasticsearchEndpoint")) {
+            String region;
+            final String elasticsearchEndpoint = flinkProperties.getProperty("ElasticsearchEndpoint");
+
+            if (env instanceof LocalStreamEnvironment) {
+                region = flinkProperties.getProperty("Region");
+            } else {
+                region = flinkProperties.getProperty("Region", Regions.getCurrentRegion().getName());
+            }
+
+            departmentsAggJson.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "departments_count"));
+            clickEventsUserIdAggResultJson.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_counts"));
+            userSessionsAggregatesWithOrderCheckoutJson.addSink(AmazonElasticsearchSink.buildElasticsearchSink(elasticsearchEndpoint, region, "user_session_details"));
+        }
         LOG.info("Starting execution..");
         env.execute();
 
