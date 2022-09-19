@@ -2,7 +2,7 @@
   {
     "PropertyGroupId": "FlinkApplicationProperties",
     "PropertyMap": {
-      "ElasticsearchEndpoint": "https://vpc-aos-clickstream-us-east-1-6ufigerpm7gijckbi22m2ous7m.us-east-1.es.amazonaws.com",
+      "OpenSearchEndpoint": "https://vpc-aos-clickstream-us-east-1-6ufigerpm7gijckbi22m2ous7m.us-east-1.es.amazonaws.com",
       "Region": "us-east-1",
       "BootstrapServers": "boot-9ganydcu.c2.kafka-serverless.us-east-1.amazonaws.com:9098",
       "GroupId": "flink-clickstream-processor",
