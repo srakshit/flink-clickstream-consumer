@@ -2,9 +2,9 @@
   {
     "PropertyGroupId": "FlinkApplicationProperties",
     "PropertyMap": {
-      "OpenSearchEndpoint": "https://vpc-aos-clickstream-us-east-1-6ufigerpm7gijckbi22m2ous7m.us-east-1.es.amazonaws.com",
-      "Region": "us-east-1",
-      "BootstrapServers": "boot-9ganydcu.c2.kafka-serverless.us-east-1.amazonaws.com:9098",
+      "OpenSearchEndpoint": "https://vpc-aos-clickstream-us-east-2-btwfvbdszwhwhgnt3d5kdqc7c4.us-east-2.es.amazonaws.com",
+      "Region": "us-east-2",
+      "BootstrapServers": "boot-idcv1rjg.c3.kafka-serverless.us-east-2.amazonaws.com:9098",
       "GroupId": "flink-clickstream-processor",
       "Topic": "ExampleTopic",
       "DepartmentsAgg_Topic": "Departments_Agg",

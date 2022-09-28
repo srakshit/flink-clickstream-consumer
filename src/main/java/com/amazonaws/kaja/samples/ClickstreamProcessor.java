@@ -66,7 +66,7 @@ public class ClickstreamProcessor {
         Map<String, Properties> applicationProperties;
 
         if (env instanceof LocalStreamEnvironment) {
-//            applicationProperties  = KinesisAnalyticsRuntime.getApplicationProperties(Objects.requireNonNull(ClickstreamProcessor.class.getClassLoader().getResource("KDAApplicationProperties.json")).getPath());
+            //applicationProperties  = KinesisAnalyticsRuntime.getApplicationProperties(Objects.requireNonNull(ClickstreamProcessor.class.getClassLoader().getResource("KDAApplicationProperties.json")).getPath());
             applicationProperties  = KinesisAnalyticsRuntime.getApplicationProperties("/home/ec2-user/flink-clickstream-consumer/src/main/resources/KDAApplicationProperties.json");
             //Setting parallelism in code. When running on my laptop I was getting out of file handles error, so reduced parallelism, but increase it on KDA
             env.setParallelism(1);
@@ -100,11 +100,12 @@ public class ClickstreamProcessor {
             return;
         }
 
+	LOG.info("Region: " + flinkProperties.getProperty("Region"));
+
         //Setting properties for Apache kafka (MSK)
         Properties kafkaConfig = new Properties();
         kafkaConfig.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, flinkProperties.getProperty("BootstrapServers"));
         kafkaConfig.setProperty(ConsumerConfig.GROUP_ID_CONFIG,flinkProperties.getProperty("GroupId", "flink-clickstream-processor"));
-//        kafkaConfig.setProperty(ConsumerConfig.CLIENT_ID_CONFIG,"flink.consumer.properties");
         kafkaConfig.setProperty(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, "SASL_SSL");
         kafkaConfig.setProperty(SaslConfigs.SASL_MECHANISM, "AWS_MSK_IAM");
         kafkaConfig.setProperty(SaslConfigs.SASL_JAAS_CONFIG, "software.amazon.msk.auth.iam.IAMLoginModule required;");
@@ -113,7 +114,7 @@ public class ClickstreamProcessor {
         WatermarkStrategy watermarkStrategy = WatermarkStrategy
                 .forBoundedOutOfOrderness(Duration.ofSeconds(20)).withIdleness(Duration.ofMinutes(1));
 
-        schemaRegistryConfigs.put(AWSSchemaRegistryConstants.AWS_REGION, flinkProperties.getProperty("Region"));
+        schemaRegistryConfigs.put(AWSSchemaRegistryConstants.AWS_REGION, flinkProperties.getProperty("Region", "us-east-2"));
         schemaRegistryConfigs.put(AWSSchemaRegistryConstants.AVRO_RECORD_TYPE, AvroRecordType.SPECIFIC_RECORD.getName());
 
         FlinkKafkaConsumer<ClickEvent> consumer = new FlinkKafkaConsumer<>(
