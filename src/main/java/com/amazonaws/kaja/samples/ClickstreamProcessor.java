@@ -114,7 +114,7 @@ public class ClickstreamProcessor {
         WatermarkStrategy watermarkStrategy = WatermarkStrategy
                 .forBoundedOutOfOrderness(Duration.ofSeconds(20)).withIdleness(Duration.ofMinutes(1));
 
-        schemaRegistryConfigs.put(AWSSchemaRegistryConstants.AWS_REGION, flinkProperties.getProperty("Region", "us-east-2"));
+        schemaRegistryConfigs.put(AWSSchemaRegistryConstants.AWS_REGION, flinkProperties.getProperty("Region", Regions.getCurrentRegion().getName()));
         schemaRegistryConfigs.put(AWSSchemaRegistryConstants.AVRO_RECORD_TYPE, AvroRecordType.SPECIFIC_RECORD.getName());
 
         FlinkKafkaConsumer<ClickEvent> consumer = new FlinkKafkaConsumer<>(
